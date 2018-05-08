@@ -1,0 +1,33 @@
+[Unit]
+Description=Proxy %p for situation %i
+
+[Service]
+EnvironmentFile=/etc/environment
+EnvironmentFile=-/efs/services/environment
+TimeoutStartSec=0
+Restart=always
+RestartSec=25s
+KillMode=none
+
+ExecStartPre=-/usr/bin/docker kill %p
+ExecStartPre=-/usr/bin/docker rm %p
+ExecStartPre=-/usr/bin/etcdctl rm fail/%p/%i
+ExecStartPre=-/usr/bin/etcdctl mkdir situation
+ExecStartPre=-/usr/bin/etcdctl set situation/Gw "%i Startup"
+
+ExecStart=/usr/bin/docker run --rm -h %i --name %p -p 80:80 -p 443:443 -v /efs/services/nginx:/etc/nginx -v /efs/share:/web -v /efs/ca:/ca -v /efs/media/jukebox:/media/jukebox  -e TZ="America/Toronto" nginx:latest
+ExecStartPost=-/usr/bin/etcdctl set ops/%p/%i "${COREOS_PUBLIC_IPV4}"
+ExecStartPost=-/usr/bin/etcdctl set ops/local/%H "${COREOS_PRIVATE_IPV4}"
+
+ExecReload=/usr/bin/docker kill -s HUP %p
+
+ExecStop=-/bin/bash -c 'etcdctl set fail/%p/%i "$(date -u +%%s)"'
+ExecStopPost=-/usr/bin/etcdctl rm ops/%p/%i
+ExecStopPost=-/usr/bin/etcdctl rm ops/local/%H
+ExecStopPost=-/usr/bin/docker stop %p
+ExecStopPost=-/usr/bin/docker rm %p
+
+[X-Fleet]
+MachineMetadata=situation=%i
+Conflicts=%p@*.service
+

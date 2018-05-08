@@ -1,0 +1,5 @@
+        ssl_certificate       /ca/domain/DOMAIN.cert.pem;
+        ssl_certificate_key   /ca/domain/DOMAIN.key.pem;
+        ssl_protocols         TLSv1 TLSv1.1 TLSv1.2;
+        ssl_ciphers  HIGH:!aNULL:!MD5;
+        ssl_prefer_server_ciphers   on;

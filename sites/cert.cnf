@@ -1,0 +1,18 @@
+server {
+        listen 80;
+	server_name cert.securinglabs.online;
+  return 301 https://$server_name$request_uri;
+}
+server {
+        listen 443 ssl;
+	server_name cert.securinglabs.online;
+        include error.page;
+        include dom.securinglabs.online;
+        include auth.public;
+        root /web/cert;
+        client_max_body_size 128M;
+# proxy to real service
+              location / {
+        try_files $uri $uri/ /index.html /root/chain.crt;
+              }
+}

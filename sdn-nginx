@@ -1,0 +1,105 @@
+#!/bin/bash
+#
+# mount nginx conf directory to /efs/services/nginx:/nginx
+#
+set -a
+# mount latest IPS var table to /efs/deploy/env/.IPS:/.IPS:ro
+# read only to lock in session setup to the container
+#
+source /.IPS
+
+if [ -z "$@" ] ; then
+	echo "did not receive a key to work with: $@"
+	exit 0
+fi
+
+
+keychange="$@"
+
+PROTO="http"
+KEYHOST="${PROTO}://keystore:2379"
+KEYSTORE="${KEYHOST}/v2/keys"
+ETCDCTL_ENDPOINTS=${KEYHOST}
+FLEET_ETCD_SERVERS="${KEYHOST}"
+export FLEET_ETCD_SERVERS
+export ETCDCTL_ENDPOINTS
+ETCDCTL_STRICT_HOST_KEY_CHECKING=false
+FLEETCTL_STRICT_HOST_KEY_CHECKING=false
+export ETCDCTL_STRICT_HOST_KEY_CHECKING
+export FLEETCTL_STRICT_HOST_KEY_CHECKING
+CNTKEYS=()
+INKEYS=()
+PRODARRAY=()
+myservice=()
+myinstance=()
+cnt=0
+
+kstore=$(echo ${keychange} | cut -d '/' -f -3)
+kops=$(echo ${keychange} | cut -d '/' -f 2)
+kapp=$(echo ${keychange} | cut -d '/' -f 3)
+mycnf="/nginx/${kops}/${kapp}.cnf"
+mydomain=$(etcdctl get env/global/$kops)
+
+msgbus "$0 noticed changes to $kops service $kapp"
+etcdctl set situation/$kops/Auth/App "$kapp changing state"
+
+INKEYS=($(etcdctl ls --sort --recursive ${kstore}))
+	for (( i=0; i<${#INKEYS[@]}; i++ )) ; do
+        	tfile="${INKEYS[$i]}"
+        	myservice=$(echo ${tfile} | cut -d '/' -f 3)
+		proto=$(etcdctl get env/app/$myservice/proto 2>/dev/null) || { proto="http" ; }
+		inc_param=$(etcdctl get env/app/$myservice/inc 2>/dev/null) || { inc_param="websockets" ; }
+		tlsauth=$(etcdctl get env/app/$myservice/auth 2>/dev/null) || { tlsauth="private" ; }
+        	myinstance=$(echo ${tfile} | cut -d '/' -f 4)
+        	vals=$(etcdctl get $tfile 2>/dev/null)
+        		if [ $? -eq 0 ] ; then
+            			(( cnt++ ))
+            			PRODARRAY+=("server ${vals};")
+            			LASTIN="${vals}"
+        		else
+            			continue
+        		fi
+    	done
+        if [ "${tlsauth}" == "open" ] ; then
+            serverlisten="listen 80 ; listen 443 ssl;"
+            tlsauth="public"
+        else
+            serverlisten="listen 443 ssl;"
+        fi
+
+
+        if [ -f /nginx/dom.${tlsauth}.${mydomain} ] ; then
+            myservicedomain="${tlsauth}.${mydomain}" 
+        else
+            myservicedomain="${mydomain}"
+        fi
+
+if [ $cnt -gt 1 ] ; then
+	echo "upstream ${myservice} { ${PRODARRAY[@]} }" > ${mycnf}
+    	echo "server { $serverlisten server_name ${myservice}.${mydomain}; include dom.${myservicedomain}; include auth.${tlsauth}; include error.page; " >> ${mycnf}
+    	echo "location / { proxy_pass ${proto}://${myservice}; include $inc_param; }" >> ${mycnf}
+    	echo "}" >> ${mycnf}
+	etcdctl set situation/$kops/${tlsauth}/${kapp} "https://${myservice}.${mydomain}"
+	siteaware="${#PRODARRAY[@]} $kapp containers started" 
+	reloadmsg="$(date) $0 Reload request for ${kops} $myservice running across ${#PRODARRAY[@]} containers" 
+elif
+    	[ $cnt -eq 1 ] ; then
+    	echo "server { $serverlisten server_name ${myservice}.${mydomain} ; include dom.${myservicedomain}; include auth.${tlsauth}; include error.page; " > ${mycnf}
+    	echo "location / { proxy_pass ${proto}://${LASTIN}; include $inc_param; }" >> ${mycnf}
+    	echo "}" >> ${mycnf}
+	etcdctl set situation/$kops/${tlsauth}/${kapp} "https://${myservice}.${mydomain}"
+	siteaware="$kapp container started by $0 " 
+	reloadmsg="$(date) Reload request for ${kops} $myservice running in 1 container " 
+elif
+    	[ $cnt -lt 1 ] ; then
+  	rm -rf ${mycnf}
+	tlsauth=$(etcdctl get env/app/$kapp/auth 2>/dev/null) || { tlsauth="private" ; }
+	etcdctl set --ttl 600 situation/$kops/${tlsauth}/${kapp} "OFFLINE"
+	siteaware="$0 stopped $kapp service" 
+	reloadmsg="$(date) Reload request to remove $kapp from $kops " 
+fi
+
+etcdctl set situation/$kops/Auth/App "${siteaware}"
+etcdctl set situation/Gw "${reloadmsg}"
+msgbus "${siteaware}"
+

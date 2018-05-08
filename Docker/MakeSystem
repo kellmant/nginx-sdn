@@ -1,0 +1,25 @@
+#!/bin/bash
+#
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd $DIR
+source /efs/deploy/.corebuild
+jobstart "$$"
+trap "jobtrace '$$'" 0 1 2 3 6
+
+
+LOADSERVICE=($(ls *.service))
+CORELIST=($(get_corehosts))
+
+for l in "${LOADSERVICE[@]}" ; do
+fleetctl submit $l
+sleep 2
+done
+
+for l in "${LOADSERVICE[@]}" ; do
+	unitsvc=$(echo $l | cut -d '.' -f 1)
+	for c in "${CORELIST[@]}" ; do
+	fleetctl start ${unitsvc}${c}
+	sleep 4
+	done
+done
+

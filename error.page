@@ -1,0 +1,3 @@
+error_page 400 403 http://trust.seclab.help/;
+error_page 404 http://blog.securinglabs.online/;
+error_page 500 502 503 504 http://status.seclab.help/;

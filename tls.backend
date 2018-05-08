@@ -1,0 +1,8 @@
+	proxy_ssl_certificate       /ca/local/local.cert.pem;
+        proxy_ssl_certificate_key   /ca/local/local.key.pem;
+        proxy_ssl_protocols         TLSv1 TLSv1.1 TLSv1.2;
+        proxy_ssl_ciphers  HIGH:!aNULL:!MD5;
+	proxy_ssl_trusted_certificate /ca/root/ca-chain.cert.pem;
+	proxy_ssl_verify on;
+	proxy_ssl_verify_depth 2;
+	proxy_ssl_session_reuse off;

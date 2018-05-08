@@ -1,0 +1,24 @@
+[Unit]
+Description=gw config reload for the %p at %i 
+
+# Requirements
+#Requires=%i@proxy.service
+
+# Dependency ordering
+After=gw@%i.service
+
+
+[Service]
+EnvironmentFile=/etc/environment
+EnvironmentFile=-/efs/services/environment
+TimeoutStartSec=0
+KillMode=none
+RestartSec=10s
+Restart=always
+ExecStartPre=-/usr/bin/etcdctl rm fail/%p/%i
+ExecStart=/bin/bash -c 'etcdctl exec-watch situation/Gw -- sudo systemctl reload gw@%i'
+ExecStop=-/bin/bash -c 'etcdctl set fail/%p/%i "$(date -u +%%s)"
+
+[X-Fleet]
+MachineMetadata=situation=%i 
+Conflicts=%p@*.service
